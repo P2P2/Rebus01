@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Data.SqlClient;
+using System.Diagnostics;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using log4net;
 using log4net.Appender;
@@ -26,7 +28,7 @@ namespace Server01
             var consoleAppender = new ConsoleAppender
             {
                 Layout = consoleLayout,
-                Threshold = Level.Debug
+                Threshold = Level.Info
             };
             consoleAppender.ActivateOptions();
 
@@ -42,6 +44,7 @@ namespace Server01
             using (var container = new Container())
             {
                 container.Collection.Register<IHandleMessages<MyMessage>>(typeof(Server));
+                container.Collection.Register<IHandleMessages<SampleForTiming>>(new TimingServer());
                 container.ConfigureRebus(
                     c => c
                         .Logging(l => l.Log4Net())
@@ -65,7 +68,34 @@ namespace Server01
 
             public Task Handle(MyMessage message)
             {
-                log.Debug($"Received {message.Value}");
+                log.Info($"Received {message.Value}");
+                return Task.CompletedTask;
+            }
+        }
+
+        public class TimingServer : IHandleMessages<SampleForTiming>
+        {
+            private static readonly log4net.ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+            private readonly Stopwatch _sw = new Stopwatch();
+            private int _count = 0;
+
+            public Task Handle(SampleForTiming message)
+            {
+                if (message.StartTiming)
+                {
+                    _sw.Reset();
+                    _sw.Start();
+                    _count = 0;
+                }
+
+                Interlocked.Increment(ref _count);
+
+                if (message.StopTiming)
+                {
+                    _sw.Stop();
+                    log.Info($"Received {_count:n0} messages in {_sw.ElapsedMilliseconds:n1}ms, {1000.0 / _sw.ElapsedMilliseconds * _count:n0} msgs/sec");
+                }
+
                 return Task.CompletedTask;
             }
         }

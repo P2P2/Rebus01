@@ -1,4 +1,6 @@
-﻿using System.Data.SqlClient;
+﻿using System;
+using System.Data.SqlClient;
+using System.Diagnostics;
 using System.Reflection;
 using System.Threading.Tasks;
 using log4net;
@@ -25,7 +27,7 @@ namespace Client01
             var consoleAppender = new ConsoleAppender
             {
                 Layout = consoleLayout,
-                Threshold = Level.Debug
+                Threshold = Level.Info
             };
             consoleAppender.ActivateOptions();
 
@@ -46,19 +48,23 @@ namespace Client01
                         .Logging(l => l.Log4Net())
                         .Transport(t => t.UseSqlServerAsOneWayClient(connectionString))
                         .Routing(r => r.TypeBased()
-                            .Map<MyMessage>("Shared01"))
+                            .Map<MyMessage>("Shared01")
+                            .Map<SampleForTiming>("Shared01"))
                         .Start()
                 );
                 container.Verify();
 
                 var client = container.GetInstance<IClient>();
-                await client.Run();
+                await client.RunBasicTest();
+                await Task.Delay(TimeSpan.FromMilliseconds(500.0));
+                await client.RunSimplePerformanceTest();
             }
         }
 
         public interface IClient
         {
-            Task Run();
+            Task RunBasicTest();
+            Task RunSimplePerformanceTest();
         }
 
         public class Client : IClient
@@ -71,14 +77,34 @@ namespace Client01
                 _bus = bus;
             }
 
-            public async Task Run()
+            public async Task RunBasicTest()
             {
                 for (var i = 0; i < 10; ++i)
                 {
-                    log.Debug($"Sending {i}");
+                    log.Info($"Sending {i}");
                     await _bus.Send(new MyMessage {Value = i});
-                    await Task.Delay(i * 100);
+                    await Task.Delay(i * 30);
                 }
+            }
+
+            public async Task RunSimplePerformanceTest()
+            {
+                const int numToSend = 2500;
+
+                var sw = new Stopwatch();
+                sw.Start();
+                for (var i = 0; i < numToSend; ++i)
+                {
+                    await _bus.Send(new SampleForTiming
+                    {
+                        MessageData = Guid.NewGuid().ToString(),
+                        StartTiming = i == 0,
+                        StopTiming = i == numToSend - 1,
+                    });
+                }
+                sw.Stop();
+
+                log.Info($"Sent {numToSend:n0} messages in {sw.ElapsedMilliseconds:n1}ms, mean={1.0 * sw.ElapsedMilliseconds / numToSend:n3}ms");
             }
         }
     }
