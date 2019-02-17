@@ -1,12 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Data;
 using System.Data.SqlClient;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Rebus.Activation;
+using log4net.Appender;
+using log4net.Config;
+using log4net.Core;
+using log4net.Layout;
 using Rebus.Bus;
 using Rebus.Config;
 using Rebus.Handlers;
@@ -17,8 +16,20 @@ namespace ConsoleApp1
 {
     class Program
     {
-        static void Main(string[] args)
+        static void Main()
         {
+            var consoleLayout = new PatternLayout(@"%date{HH:mm:ss.fff} [%thread] %message%newline%exception");
+            consoleLayout.ActivateOptions();
+
+            var consoleAppender = new ConsoleAppender
+            {
+                Layout = consoleLayout,
+                Threshold = Level.Info
+            };
+            consoleAppender.ActivateOptions();
+
+            BasicConfigurator.Configure(consoleAppender);
+
             var connectionString = new SqlConnectionStringBuilder
             {
                 DataSource = @"(localdb)\MSSQLLocalDb",
@@ -32,13 +43,14 @@ namespace ConsoleApp1
                 container.Register<IDateTimePublisher, Publisher>(Lifestyle.Singleton);
                 container.ConfigureRebus(
                     c => c
+                        .Logging(l => l.Log4Net())
                         .Transport(t => t.UseSqlServer(connectionString, "MyMessages"))
                         .Start()
                 );
                 container.Verify();
 
                 var publisher = container.GetInstance<IDateTimePublisher>();
-                using (var timer = new Timer(_ => publisher.PublishDateTime().Wait(), null, TimeSpan.FromSeconds(1.0), TimeSpan.FromSeconds(5.0)))
+                using (new Timer(_ => publisher.PublishDateTime().Wait(), null, TimeSpan.FromSeconds(1.0), TimeSpan.FromSeconds(5.0)))
                 {
                     Console.ReadLine();
                 }
